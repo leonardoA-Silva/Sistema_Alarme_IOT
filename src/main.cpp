@@ -12,8 +12,12 @@ const int TRIG_PIN = 12;
 const int ECHO_PIN = 14;
 
 // Distancia máxima
-const int MAX_DISTANCE = 50;
-const int LIMITE_DISTANCIA = 15;
+const int MAX_DISTANCE = 100;
+int limiteDistancia = 15;
+bool intrusaoAnterior = false;
+
+// controle da ultima distancia publicada
+int distanciaAnterior = -1;
 
 NewPing sonar(
     TRIG_PIN, ECHO_PIN, MAX_DISTANCE);
@@ -25,12 +29,15 @@ AdafruitIO_WiFi io(
     WIFI_PASS);
 
 AdafruitIO_Feed *feedbotao = io.feed("botao");
+AdafruitIO_Feed *feeddistancia = io.feed("distanciaultrassom");
+AdafruitIO_Feed *feedLimite = io.feed("limitealarme");
+AdafruitIO_Feed *feedIntrusao = io.feed("intrusao");
 
 // -----------------------------------
 // Estado do sistema
 bool alarmeAtivo = false;
 unsigned long ultimaLeituraSensor = 0;
-const unsigned long INTERVALO_SENSOR = 500; // 0.5 segundo
+const unsigned long INTERVALO_SENSOR = 2500; // 2 segundos
 // -----------------------------------
 
 // Controle do botão
@@ -45,6 +52,8 @@ void verificarBotao();
 void testeGeral();
 
 void handleAlarme(AdafruitIO_Data *data);
+
+void handleLimite(AdafruitIO_Data *data);
 
 void verificarSensor();
 
@@ -66,6 +75,7 @@ void setup()
   desligarAlerta();
 
   feedbotao->onMessage(handleAlarme);
+  feedLimite->onMessage(handleLimite);
 
   Serial.println("");
   Serial.println("Iniciando a ESP...");
@@ -85,6 +95,7 @@ void setup()
   Serial.println("Adafruit IO Conectado");
 
   feedbotao->get();
+  feedLimite->get();
 
   Serial.println("Sistema de alarme iniciado...");
   delay(2000);
@@ -116,7 +127,19 @@ void verificarSensor()
   Serial.print(distancia);
   Serial.println(" cm");
 
-  bool intrusao = alarmeAtivo && distancia > 0 && distancia < LIMITE_DISTANCIA;
+  if(distancia > 0 && distancia != distanciaAnterior){
+    feeddistancia->save(distancia);
+    distanciaAnterior = distancia;
+    Serial.println("Distancia publicada no Adafruit IO");
+  }
+
+  bool intrusao = alarmeAtivo && distancia > 0 && distancia < limiteDistancia;
+
+  if (intrusao != intrusaoAnterior)
+  {
+    feedIntrusao->save(String(intrusao ? "true" : "false"));
+    intrusaoAnterior = intrusao;
+  }
 
   if(intrusao){
     ativarAlerta();
@@ -178,6 +201,19 @@ void handleAlarme(AdafruitIO_Data *data)
   else
   {
     Serial.print("Valor recebido inválido");
+  }
+}
+
+void handleLimite(AdafruitIO_Data *data)
+{
+  int novoLimite = data->toInt();
+
+  if (novoLimite >= 5 && novoLimite <= 100)
+  {
+    limiteDistancia = novoLimite;
+    Serial.print("Novo limite: ");
+    Serial.print(limiteDistancia);
+    Serial.println(" cm");
   }
 }
 
